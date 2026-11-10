@@ -10,6 +10,9 @@ test("build emits a publishable static QW Page", async () => {
 
   assert.match(html, /<div id="root"><\/div>/);
   assert.doesNotMatch(html, /\/src\/main\.tsx/);
+  // Absolute /assets/ paths break on GitHub Pages project sites (sub-path).
+  assert.doesNotMatch(html, /(src|href)="\/assets\//);
+  assert.match(html, /(src|href)="\.\/assets\//);
   assert.ok(assets.some((file) => file.endsWith(".js")));
   assert.ok(assets.some((file) => file.endsWith(".css")));
 });
