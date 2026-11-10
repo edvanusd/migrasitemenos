@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { phases, challenges, benefits, prereq, glossary, references, KB, objectives, dataCategories, outOfScope, approach, stagingGoals, rrTable, toolOverview, prereqChecks, toolTemplates, toolVersionNotes, stpMessage, dmdAuto, featureDetails, simSteps, simSampleRecords, type Phase } from './data';
+import { Component, Suspense, lazy, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { SceneFallback } from './SceneFallback';
+import type { MigrationSceneProps } from './MigrationScene';
+import { stageStory, phases, challenges, benefits, prereq, glossary, references, KB, objectives, dataCategories, outOfScope, approach, stagingGoals, rrTable, toolOverview, prereqChecks, toolTemplates, toolVersionNotes, stpMessage, dmdAuto, featureDetails, simSteps, simSampleRecords, type Phase } from './data';
 
 const NAV: [string, string][] = [
   ['overview','📊 Ringkasan'],
@@ -17,7 +19,28 @@ const NAV: [string, string][] = [
   ['about','ℹ️ Tentang'],
 ];
 
-function esc(s: string){return s.replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+const ESC: Record<string,string> = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'};
+function esc(s: string){return s.replace(/[&<>"]/g,m=>ESC[m] ?? m);}
+
+const TAB_KEYS = NAV.map(n=>n[0]);
+function readHash(){ const h = window.location.hash.replace('#',''); return TAB_KEYS.includes(h) ? h : 'overview'; }
+const prefersReducedMotion = () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const phaseShort = (name: string) => name.replace(/^\d+\.\s*/, '');
+
+// 3D scene: loaded on demand so the guide itself opens fast
+const MigrationScene = lazy(() => import('./MigrationScene'));
+class SceneBoundary extends Component<{children: ReactNode; compact?: boolean}, {failed: boolean}> {
+  state = { failed: false };
+  static getDerivedStateFromError(){ return { failed: true }; }
+  render(){ return this.state.failed ? <SceneFallback compact={this.props.compact}/> : this.props.children; }
+}
+function Scene3D(props: MigrationSceneProps){
+  return <SceneBoundary compact={props.compact}>
+    <Suspense fallback={<SceneFallback compact={props.compact} loading/>}>
+      <MigrationScene {...props}/>
+    </Suspense>
+  </SceneBoundary>;
+}
 
 function answer(q: string){
   const ql = q.toLowerCase();
@@ -36,8 +59,7 @@ function answer(q: string){
 
 function Card({title, icon, children}:{title:string; icon?:string; children:React.ReactNode}){
   return <div className="card">
-    {icon && <div className="card-icon">{icon}</div>}
-    <h2 className="card-title">{title}</h2>
+    <h2 className="card-title">{icon && <span className="card-icon" aria-hidden="true">{icon}</span>}{title}</h2>
     <div className="card-body">{children}</div>
   </div>;
 }
@@ -50,16 +72,64 @@ function mark(roles: string, who: string){
   return <span className="dim">—</span>;
 }
 
+// Overview hero: the 3D journey with a phase rail and optional autoplay
+const STAGE_MS = [6000, 6500, 6500, 9500, 9000];
+function Hero({onGo, onAsk}:{onGo:(k:string)=>void; onAsk:()=>void}){
+  const [stage,setStage]=useState(0);
+  const [playing,setPlaying]=useState(()=>!prefersReducedMotion());
+  useEffect(()=>{
+    if(!playing) return;
+    const id=window.setTimeout(()=>setStage(s=>(s+1)%phases.length), STAGE_MS[stage]);
+    return ()=>window.clearTimeout(id);
+  },[playing,stage]);
+  const choose=(i:number)=>{ setStage(i); setPlaying(false); };
+  return <section className="hero" aria-labelledby="hero-title">
+    <div className="hero-head">
+      <h1 id="hero-title" className="hero-title">Migrasi data core banking ke Temenos T24</h1>
+      <p className="hero-lede">Ikuti perjalanan setiap record: dari sistem legacy, dibersihkan di staging, lalu di-load dan direkonsiliasi di T24. Pilih fase untuk melihat apa yang terjadi.</p>
+    </div>
+    <div className="hero-stage">
+      <Scene3D stage={stage} onZoneSelect={choose} label={`Animasi 3D perjalanan record. Fase ${phaseShort(phases[stage].name)}.`}/>
+      <p className="hero-hint">Seret untuk memutar. Arahkan atau ketuk kotak untuk melihat record.</p>
+    </div>
+    <div className="rail" role="group" aria-label="Pilih fase migrasi">
+      {phases.map((p,i)=><button key={p.key} type="button" aria-pressed={i===stage}
+        className={i===stage?'rail-step is-active':'rail-step'} style={{'--phase':p.color} as CSSProperties}
+        onClick={()=>choose(i)}>
+        <span className="rail-num">{i+1}</span>
+        <span className="rail-name">{phaseShort(p.name)}</span>
+        <span className="rail-pct">{p.pct}% effort</span>
+        {playing && i===stage && <span className="rail-timer" key={`t${stage}`} style={{animationDuration:`${STAGE_MS[stage]}ms`}}/>}
+      </button>)}
+    </div>
+    <div className="hero-foot">
+      <p className="hero-caption" aria-live={playing?'off':'polite'}>{stageStory[stage]}</p>
+      <button type="button" className="play-btn" onClick={()=>setPlaying(p=>!p)} aria-pressed={playing}>
+        {playing ? '❚❚ Jeda' : '▶ Putar otomatis'}
+      </button>
+    </div>
+    <div className="next-steps">
+      <button type="button" className="sim-btn" onClick={()=>onGo('phases')}>Lihat aktivitas tiap fase</button>
+      <button type="button" className="sim-btn ghost" onClick={()=>onGo('sim')}>Coba simulasi migrasi CUSTOMER</button>
+      <button type="button" className="sim-btn ghost" onClick={onAsk}>Tanya asisten</button>
+    </div>
+  </section>;
+}
+
 function PhaseView(){
   const [idx,setIdx]=useState(0);
   const p: Phase = phases[idx];
   return <>
-    <div className="effort-bar">
-      {phases.map(x=><div key={x.key} style={{width:`${x.pct*2}%`, background:x.color}}>{x.pct}%</div>)}
+    <Scene3D stage={idx} compact onZoneSelect={setIdx} errors="cycle" label={`Animasi 3D fase ${phaseShort(p.name)}`}/>
+    <p className="scene-caption">{stageStory[idx]}</p>
+    <div className="effort-bar" role="group" aria-label="Distribusi effort per fase">
+      {phases.map((x,i)=><button type="button" key={x.key} onClick={()=>setIdx(i)} aria-pressed={i===idx}
+        className={i===idx?'effort-seg is-active':'effort-seg'}
+        style={{flexGrow:x.pct, background:x.color}} title={`${x.name}: ${x.pct}% effort`}>{x.pct}%</button>)}
     </div>
     <div className="phase-tabs">
       {phases.map((x,i)=>
-        <button key={x.key} onClick={()=>setIdx(i)} className={i===idx?'phase-tab active':'phase-tab'}>{x.name}</button>)}
+        <button key={x.key} onClick={()=>setIdx(i)} className={i===idx?'phase-tab active':'phase-tab'} style={{'--phase':x.color} as CSSProperties}>{x.name}</button>)}
     </div>
     <div className="phase-head" style={{borderLeftColor:p.color}}>
       <div className="phase-title">{p.name} — {p.pct}% effort</div>
@@ -137,7 +207,15 @@ function ToolView(){
   </>;
 }
 
-// Interactive simulation
+// Interactive simulation — each DM Tool step maps to a phase of the 3D journey
+const SIM_STAGE = [0,1,1,2,2,2,3,4,4,4];
+const SIM_CAPTION = [
+  'Environment dicek dulu. Record CUSTOMER masih berada di sistem sumber.',
+  'ID legacy diterjemahkan dan field dipetakan ke T24 lewat DMD.',
+  'File data disiapkan di DATA.IN dan diverifikasi sebelum load.',
+  'DSC memvalidasi, me-load, dan meng-authorize setiap record.',
+  'Data ter-load di T24. Rekonsiliasi memindai dan membandingkan record dengan sumbernya.',
+];
 function Simulation(){
   const [step,setStep]=useState(0);
   const [fixed,setFixed]=useState<Record<string,boolean>>({});
@@ -234,7 +312,15 @@ function Simulation(){
     }
   };
 
+  const sceneStage = SIM_STAGE[step] ?? 0;
+  const sceneErrors = s.ui==='dsc' && badRecs.length>0 ? 'stuck' : 'none';
   return <div className="sim">
+    <Scene3D stage={sceneStage} errors={sceneErrors} compact label={`Animasi 3D simulasi, tahap ${s.title}`}/>
+    <p className="scene-caption">
+      {s.ui==='dsc' && badRecs.length>0
+        ? 'Record merah tertahan di gerbang validasi DSC. Perbaiki datanya, lalu lihat record itu ikut ter-load ke T24.'
+        : SIM_CAPTION[sceneStage]}
+    </p>
     <div className="sim-progress">
       {simSteps.map((x,i)=><div key={x.title} className="sim-pbar">
         <button className={i===step?'sim-pdot active':i<step?'sim-pdot done':'sim-pdot'} onClick={()=>setStep(i)}>{i<step?'✓':i}</button>
@@ -257,59 +343,116 @@ function Simulation(){
 }
 
 
-function Chatbot(){
-  const [open,setOpen]=useState(false);
+const QUICK_QUESTIONS = ['Apa saja fase migrasi?', 'Apa itu DMS?', 'Bagaimana rekonsiliasi data?', 'Syarat jadi managed partner?'];
+function Chatbot({open, setOpen}:{open:boolean; setOpen:(v:boolean)=>void}){
   const [log,setLog]=useState<{who:'bot'|'user';html:string}[]>([{
     who:'bot',
-    html:'Halo! 👋 Saya asisten migrasi data Temenos T24. Silakan bertanya, contoh: <i>"apa itu DMS?"</i>, <i>"apa saja fase migrasi?"</i>, atau <i>"syarat jadi managed partner?"</i>',
+    html:'Halo! 👋 Saya asisten migrasi data Temenos T24. Tanyakan apa saja, atau pilih salah satu pertanyaan di bawah.',
   }]);
   const [val,setVal]=useState('');
-  const send=()=>{
-    const q=val.trim(); if(!q)return;
+  const [typing,setTyping]=useState(false);
+  const logRef=useRef<HTMLDivElement>(null);
+  const inputRef=useRef<HTMLInputElement>(null);
+  useEffect(()=>{ const el=logRef.current; if(el) el.scrollTop=el.scrollHeight; },[log,typing,open]);
+  useEffect(()=>{
+    if(!open) return;
+    inputRef.current?.focus();
+    const onKey=(e:KeyboardEvent)=>{ if(e.key==='Escape') setOpen(false); };
+    window.addEventListener('keydown',onKey);
+    return ()=>window.removeEventListener('keydown',onKey);
+  },[open,setOpen]);
+  const ask=(text:string)=>{
+    const q=text.trim(); if(!q||typing)return;
     setVal('');
     setLog(l=>[...l,{who:'user',html:esc(q)}]);
-    setTimeout(()=>setLog(l=>[...l,{who:'bot',html:answer(q)}]),250);
+    setTyping(true);
+    window.setTimeout(()=>{ setTyping(false); setLog(l=>[...l,{who:'bot',html:answer(q)}]); },450);
   };
+  const asked=log.some(m=>m.who==='user');
   return <>
-    <button className="chat-fab" onClick={()=>setOpen(!open)} title="Tanya tentang migrasi Temenos" aria-label="Buka asisten chat">💬</button>
-    {open && <div className="chat-box">
+    <button className={open?'chat-fab is-open':'chat-fab'} onClick={()=>setOpen(!open)} title="Tanya tentang migrasi Temenos"
+      aria-label={open?'Tutup asisten chat':'Buka asisten chat'} aria-expanded={open}>{open?'✕':'💬'}</button>
+    {open && <div className="chat-box" role="dialog" aria-label="Asisten Migrasi T24">
       <div className="chat-header">
         <div>
           <div className="chat-title">Asisten Migrasi T24</div>
-          <div className="chat-sub">Tanya apa saja tentang migrasi data ke Temenos T24</div>
+          <div className="chat-sub">Jawaban bersumber dari dokumen panduan</div>
         </div>
         <button className="chat-close" onClick={()=>setOpen(false)} aria-label="Tutup chat">✕</button>
       </div>
-      <div className="chat-log">
+      <div className="chat-log" ref={logRef} aria-live="polite">
         {log.map((m,i)=><div key={i} className={m.who==='bot'?'chat-msg bot':'chat-msg user'}>
           <div className={m.who==='bot'?'bubble bot-bubble':'bubble user-bubble'} dangerouslySetInnerHTML={{__html:m.html}} />
         </div>)}
+        {typing && <div className="chat-msg bot"><div className="bubble bot-bubble typing" aria-label="Asisten sedang mengetik"><i/><i/><i/></div></div>}
+        {!asked && <div className="chat-chips">
+          {QUICK_QUESTIONS.map(q=><button key={q} type="button" className="chip" onClick={()=>ask(q)}>{q}</button>)}
+        </div>}
       </div>
-      <div className="chat-input-row">
-        <input className="chat-input" value={val} onChange={e=>setVal(e.target.value)}
-          onKeyDown={e=>{if(e.key==='Enter')send();}} placeholder="Contoh: apa itu DMS?" />
-        <button className="chat-send" onClick={send}>Kirim</button>
-      </div>
+      <form className="chat-input-row" onSubmit={e=>{e.preventDefault(); ask(val);}}>
+        <input ref={inputRef} className="chat-input" value={val} onChange={e=>setVal(e.target.value)}
+          placeholder="Contoh: apa itu DMS?" aria-label="Pertanyaan" />
+        <button className="chat-send" type="submit" disabled={!val.trim()||typing}>Kirim</button>
+      </form>
     </div>}
   </>;
 }
 
+function Glossary(){
+  const [qv,setQv]=useState('');
+  const term=qv.trim().toLowerCase();
+  const items=Object.entries(glossary).filter(([k,v])=>!term || k.toLowerCase().includes(term) || v.toLowerCase().includes(term));
+  return <>
+    <div className="search-row">
+      <input className="search-input" type="search" value={qv} onChange={e=>setQv(e.target.value)}
+        placeholder="Cari istilah, mis. DMD, rekonsiliasi, OFS" aria-label="Cari istilah di glosarium"/>
+      <span className="search-count">{items.length} dari {Object.keys(glossary).length} istilah</span>
+    </div>
+    {items.length>0
+      ? <div className="grid-2">
+          {items.map(([k,v])=><div className="mini-card" key={k}>
+            <div className="mc-title term">{k}</div><div className="mc-desc">{v}</div>
+          </div>)}
+        </div>
+      : <p className="empty">Tidak ada istilah yang cocok dengan “{qv.trim()}”. Coba kata lain, atau tanyakan ke asisten lewat tombol 💬.</p>}
+  </>;
+}
+
 export function App(){
-  const [tab,setTab]=useState('overview');
+  const [tab,setTabState]=useState(readHash);
+  const [navOpen,setNavOpen]=useState(false);
+  const [chatOpen,setChatOpen]=useState(false);
+  useEffect(()=>{
+    const onHash=()=>{ setTabState(readHash()); setNavOpen(false); };
+    window.addEventListener('hashchange',onHash);
+    return ()=>window.removeEventListener('hashchange',onHash);
+  },[]);
+  const setTab=(k:string)=>{
+    setNavOpen(false);
+    if(k!==tab) window.location.hash=k;
+    window.scrollTo({top:0});
+  };
+  const current=NAV.find(n=>n[0]===tab)?.[1] ?? '';
   return (
     <div className="app-root">
-      <aside className="sidebar">
+      <a className="skip-link" href="#main">Langsung ke konten</a>
+      <aside className={navOpen?'sidebar is-open':'sidebar'}>
         <div className="side-brand">
           <div className="brand-title">Panduan Migrasi Data<br/><span>Temenos T24</span></div>
           <div className="brand-sub">Berdasarkan dokumen TDM V15 (2011)</div>
+          <button type="button" className="menu-btn" aria-expanded={navOpen} aria-controls="side-nav" onClick={()=>setNavOpen(o=>!o)}>
+            {navOpen ? '✕ Tutup' : `☰ ${current.replace(/^\S+\s/,'')}`}
+          </button>
         </div>
-        <nav className="side-nav">
+        <nav className="side-nav" id="side-nav" aria-label="Bagian panduan">
           {NAV.map(([k,label])=>
-            <button key={k} onClick={()=>setTab(k)} className={tab===k?'nav-btn active':'nav-btn'}>{label}</button>)}
+            <button key={k} onClick={()=>setTab(k)} aria-current={tab===k?'page':undefined} className={tab===k?'nav-btn active':'nav-btn'}>{label}</button>)}
         </nav>
-        <div className="side-foot">dm@temenos.com · TEMENOS Data Migration Services</div>
+        <div className="side-foot">Kontak TDM: dm@temenos.com</div>
       </aside>
-      <main className="main">
+      <main className="main" id="main">
+       <div className="view" key={tab}>
+        {tab==='overview' && <Hero onGo={setTab} onAsk={()=>setChatOpen(true)}/>}
         {tab==='overview' && <Card title="Ringkasan: Migrasi Data ke Temenos T24" icon="📊">
           <p>TEMENOS Data Migration Services (TDM) membantu <b>migrasi data dari sistem core banking client ke T24/Globus</b>, baik secara managed (dikerjakan TDM) maupun bersama <b>Managed Data Migration Partner</b>.</p>
           <ul className="bullet">
@@ -431,11 +574,7 @@ export function App(){
         </Card>}
 
         {tab==='glossary' && <Card title="Glosarium Istilah" icon="📖">
-          <div className="grid-2">
-            {Object.entries(glossary).map(([k,v])=><div className="mini-card" key={k}>
-              <div className="mc-title term">{k}</div><div className="mc-desc">{v}</div>
-            </div>)}
-          </div>
+          <Glossary/>
         </Card>}
 
         {tab==='references' && <Card title="Materi Referensi (TIM Knowledge Base)" icon="📚">
@@ -449,7 +588,7 @@ export function App(){
         </Card>}
 
         {tab==='about' && <Card title="Tentang Panduan Ini" icon="ℹ️">
-          <p>Panduan interaktif ini menggabungkan pengetahuan dari dua dokumen:</p>
+          <p>Panduan interaktif ini menggabungkan pengetahuan dari empat dokumen:</p>
           <ul className="bullet">
             <li><b>TEMENOS Data Migration Services — Managed Data Migration and Partner (V15, 19 Juli 2011)</b> — fase migrasi, aktivitas R/P/S, program partner TDM.</li>
             <li><b>Data Migration Overall Approach</b> (materi training) — objektif, scope data, pendekatan 7 tahap, staging, rekonsiliasi, dry run, decommission, backup & audit trail, serta pembagian peran Temenos vs Client.</li>
@@ -458,11 +597,12 @@ export function App(){
           </ul>
           <ul className="bullet">
             <li>Gunakan tombol 💬 untuk bertanya tentang migrasi data Temenos kapan saja.</li>
-            <li>Semua jawaban chatbot bersumber dari isi kedua dokumen tersebut.</li>
+            <li>Semua jawaban chatbot bersumber dari isi keempat dokumen tersebut.</li>
           </ul>
         </Card>}
+       </div>
       </main>
-      <Chatbot/>
+      <Chatbot open={chatOpen} setOpen={setChatOpen}/>
     </div>
   );
 }

@@ -63,6 +63,15 @@ export const phases: Phase[] = [
    ]},
 ];
 
+// Narasi adegan 3D per fase (indeks sama dengan `phases`)
+export const stageStory: string[] = [
+  'Data masih tersebar di tiga sistem sumber. Tim menyusun approach, estimasi effort, dan rencana DM sebelum ada record yang dipindahkan.',
+  'Setiap field sumber dipasangkan ke field T24 lewat Data Mapping Sheet (DMS). Garis menunjukkan aturan mapping dari record legacy ke slot di T24.',
+  'Record dikumpulkan di staging untuk divalidasi, dibersihkan, dan diubah ke format file data yang siap di-load.',
+  'Dummy dan trial migration diulang. Record yang gagal validasi (merah) tertahan di gerbang dan kembali ke staging untuk diperbaiki.',
+  'Load final ke T24, lalu rekonsiliasi memindai dan membandingkan setiap record dengan sumbernya sebelum go-live. Sistem lama dihentikan.',
+];
+
 export const challenges: [string, string][] = [
   ['Persepsi vs Realita','Money, time and people — biaya, waktu, dan SDM sering disepelekan pada perencanaan migrasi.'],
   ['Source Synchronization','Menjaga data source tetap sinkron selama masa migrasi berjalan.'],

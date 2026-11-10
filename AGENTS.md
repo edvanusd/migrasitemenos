@@ -6,6 +6,7 @@ Panduan web interaktif untuk migrasi data core banking ke Temenos T24, disarikan
 ## Product shape
 - **Category:** static Page (Vite + React + TS), build ke `dist/`.
 - **Fitur:** navigasi 13 bagian — ringkasan; objektif & scope; tantangan; roadmap 5 fase TDM; pendekatan menyeluruh 7 tahap; **DM Tool teknis** (overview, riwayat versi/service mode, pre-requisite check & template yang bisa diklik dengan detail field, STP, AUTO.DMD.CREATION, 16 fitur tambahan expandable dengan langkah kerja); **simulasi interaktif 10 langkah** migrasi CUSTOMER (pre-req → translation → DMD → DM.PREREQUISITE → DMV → backup aplikasi → DSC load dengan record error yang bisa diperbaiki → extract recon → data compare → cleanup); peran R/P/S + Temenos vs Client; prasyarat & manfaat partner; glosarium; referensi; tentang — plus chatbot KB keyword-matching.
+- **Visual:** adegan 3D three.js (`src/MigrationScene.tsx`, lazy-loaded) — record legacy → staging → T24 per fase, dipakai di hero Ringkasan, Fase & Roadmap, dan Simulasi (record error di DSC tertahan merah sampai diperbaiki). Navigasi via URL hash (`#phases`, `#sim`, ...). Palet: amber = legacy, teal = T24, merah = gagal validasi; font IBM Plex Sans/Condensed/Mono.
 - **Sumber:** empat dokumen — TDM V15 (2011), "Data Migration Overall Approach" (training), "DM Tool User Guide" GPAC/R13 (308 hal), dan "T24 DMIG Reference Guide V1.3" (165 hal).
 - **Bahasa UI:** Indonesia. Kontak: dm@temenos.com.
 - **Scope:** tanpa backend, tanpa akun user, tanpa database — semua data statis di `src/data.ts`.
